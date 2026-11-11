@@ -1,0 +1,107 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile and active operational state for warehouse staff",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Unique Google user ID" },
+        "email": { "type": "string", "description": "User email address" },
+        "displayName": { "type": "string", "description": "Staff member display name" },
+        "currentTrip": { "type": "integer", "description": "Active trip sequence (1 to 4)" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp via serverTimestamp" }
+      },
+      "required": ["userId", "email", "currentTrip", "createdAt", "updatedAt"]
+    },
+    "StagingBatch": {
+      "title": "StagingBatch",
+      "description": "Bagseal batch grouped by staging destination and trip, locked upon Ikat",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner staff user ID" },
+        "tripNumber": { "type": "integer", "description": "Trip number (1, 2, 3, or 4)" },
+        "operationalDate": { "type": "string", "description": "Calendar date YYYY-MM-DD" },
+        "stagingDestination": { "type": "string", "description": "Staging code e.g. TANB, TBET" },
+        "targetQty": { "type": "integer", "description": "Manually input target quantity" },
+        "scannedCount": { "type": "integer", "description": "Number of scanned bagseals" },
+        "bagseals": { "type": "array", "description": "List of scanned bagseal codes in this batch" },
+        "status": { "type": "string", "enum": ["active", "bound"], "description": "Batch binding state" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Batch creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Batch update timestamp" },
+        "boundAt": { "type": "string", "format": "date-time", "description": "Timestamp when user tapped Ikat" }
+      },
+      "required": ["userId", "tripNumber", "operationalDate", "stagingDestination", "targetQty", "scannedCount", "status", "createdAt", "updatedAt"]
+    },
+    "BagsealRecord": {
+      "title": "BagsealRecord",
+      "description": "Individual scanned or keyed bagseal record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner staff user ID" },
+        "code": { "type": "string", "description": "Scanned or manual bagseal barcode value" },
+        "stagingDestination": { "type": "string", "description": "Staging destination code" },
+        "tripNumber": { "type": "integer", "description": "Trip number (1-4)" },
+        "operationalDate": { "type": "string", "description": "Calendar date YYYY-MM-DD" },
+        "tag": { "type": "string", "enum": ["REG", "HV", "DOC", "BP", "NONE"], "description": "Optional category tag" },
+        "batchId": { "type": "string", "description": "Parent staging batch ID if bound" },
+        "isBound": { "type": "boolean", "description": "Whether bagseal is bound into history" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Scan timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["userId", "code", "stagingDestination", "tripNumber", "operationalDate", "tag", "isBound", "createdAt", "updatedAt"]
+    },
+    "TripSummary": {
+      "title": "TripSummary",
+      "description": "Trip progress and completion tracker for the day",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner staff user ID" },
+        "tripNumber": { "type": "integer", "description": "Trip sequence number (1, 2, 3, or 4)" },
+        "operationalDate": { "type": "string", "description": "Calendar date YYYY-MM-DD" },
+        "status": { "type": "string", "enum": ["active", "completed", "pending"], "description": "Trip state" },
+        "totalBatches": { "type": "integer", "description": "Total bound batches in trip" },
+        "totalBagseals": { "type": "integer", "description": "Total bagseals bound in trip" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" },
+        "completedAt": { "type": "string", "format": "date-time", "description": "Trip completion timestamp" }
+      },
+      "required": ["userId", "tripNumber", "operationalDate", "status", "totalBatches", "totalBagseals", "createdAt", "updatedAt"]
+    },
+    "AppVersionInfo": {
+      "title": "AppVersionInfo",
+      "description": "App version control and update information",
+      "type": "object",
+      "properties": {
+        "latestVersionCode": { "type": "integer", "description": "Latest release version code" },
+        "latestVersionName": { "type": "string", "description": "Latest release semver name" },
+        "minSupportedVersionCode": { "type": "integer", "description": "Minimum required version code" },
+        "releaseNotes": { "type": "string", "description": "Changelog and release notes" },
+        "downloadUrl": { "type": "string", "description": "APK / Store update URL" }
+      },
+      "required": ["latestVersionCode", "latestVersionName", "releaseNotes"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Staff profile and current trip pointer"
+    },
+    "/users/{userId}/staging_batches/{batchId}": {
+      "schema": "StagingBatch",
+      "description": "Batches bound or scanned per staging destination"
+    },
+    "/users/{userId}/bagseals/{bagsealId}": {
+      "schema": "BagsealRecord",
+      "description": "Individual scanned bagseals"
+    },
+    "/users/{userId}/trips/{tripId}": {
+      "schema": "TripSummary",
+      "description": "Trip progress and completion status per day"
+    },
+    "/app_config/{configId}": {
+      "schema": "AppVersionInfo",
+      "description": "Public app version and update announcements"
+    }
+  }
+}

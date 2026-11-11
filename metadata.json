@@ -1,0 +1,6 @@
+{
+  "name": "Outbound Manual Reguler",
+  "description": "Warehouse outbound operations app for trip management, staging destination bagseal scanning, barcode generation, ikat binding, and offline export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

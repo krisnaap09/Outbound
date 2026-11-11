@@ -1,0 +1,176 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.]+$');
+    }
+
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.email is string && data.email.size() <= 200 &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 200)) &&
+             data.currentTrip is int && data.currentTrip >= 1 && data.currentTrip <= 4;
+    }
+
+    function isValidStagingBatch(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.tripNumber is int && data.tripNumber >= 1 && data.tripNumber <= 4 &&
+             data.operationalDate is string && data.operationalDate.size() <= 20 &&
+             data.stagingDestination is string && data.stagingDestination.size() <= 30 &&
+             data.targetQty is int && data.targetQty >= 0 && data.targetQty <= 10000 &&
+             data.scannedCount is int && data.scannedCount >= 0 && data.scannedCount <= 10000 &&
+             data.status in ['active', 'bound'] &&
+             (!('bagseals' in data) || (data.bagseals is list && data.bagseals.size() <= 2000)) &&
+             (!('boundAt' in data) || data.boundAt == null || (data.boundAt is timestamp && data.boundAt <= request.time));
+    }
+
+    function isValidBagsealRecord(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.code is string && data.code.size() > 0 && data.code.size() <= 100 &&
+             data.stagingDestination is string && data.stagingDestination.size() <= 30 &&
+             data.tripNumber is int && data.tripNumber >= 1 && data.tripNumber <= 4 &&
+             data.operationalDate is string && data.operationalDate.size() <= 20 &&
+             data.tag in ['REG', 'HV', 'DOC', 'BP', 'NONE'] &&
+             (!('batchId' in data) || data.batchId == null || (data.batchId is string && data.batchId.size() <= 128)) &&
+             data.isBound is bool;
+    }
+
+    function isValidTripSummary(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.tripNumber is int && data.tripNumber >= 1 && data.tripNumber <= 4 &&
+             data.operationalDate is string && data.operationalDate.size() <= 20 &&
+             data.status in ['active', 'completed', 'pending'] &&
+             data.totalBatches is int && data.totalBatches >= 0 &&
+             data.totalBagseals is int && data.totalBagseals >= 0 &&
+             (!('completedAt' in data) || data.completedAt == null || (data.completedAt is timestamp && data.completedAt <= request.time));
+    }
+
+    function isValidAppVersionInfo(data) {
+      return data.latestVersionCode is int && data.latestVersionCode >= 1 &&
+             data.latestVersionName is string && data.latestVersionName.size() <= 50 &&
+             (!('minSupportedVersionCode' in data) || (data.minSupportedVersionCode is int)) &&
+             data.releaseNotes is string && data.releaseNotes.size() <= 2000 &&
+             (!('downloadUrl' in data) || (data.downloadUrl is string && data.downloadUrl.size() <= 500));
+    }
+
+    // 1. Users root collection
+    match /users/{userId} {
+      allow get, list: if isOwner(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == userId &&
+                       incoming().keys().hasAll(['userId', 'email', 'currentTrip', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'email', 'displayName', 'currentTrip', 'createdAt', 'updatedAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['email', 'displayName', 'currentTrip', 'updatedAt']);
+
+      // 2. User Subcollection: Staging Batches
+      match /staging_batches/{batchId} {
+        allow get, list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(batchId) &&
+                         incoming().userId == userId &&
+                         incoming().keys().hasAll(['userId', 'tripNumber', 'operationalDate', 'stagingDestination', 'targetQty', 'scannedCount', 'status', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'tripNumber', 'operationalDate', 'stagingDestination', 'targetQty', 'scannedCount', 'bagseals', 'status', 'createdAt', 'updatedAt', 'boundAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidStagingBatch(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(batchId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidStagingBatch(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['tripNumber', 'operationalDate', 'stagingDestination', 'targetQty', 'scannedCount', 'bagseals', 'status', 'updatedAt', 'boundAt']);
+
+        allow delete: if isOwner(userId) && isValidId(batchId);
+      }
+
+      // 3. User Subcollection: Bagseals
+      match /bagseals/{bagsealId} {
+        allow get, list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(bagsealId) &&
+                         incoming().userId == userId &&
+                         incoming().keys().hasAll(['userId', 'code', 'stagingDestination', 'tripNumber', 'operationalDate', 'tag', 'isBound', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'code', 'stagingDestination', 'tripNumber', 'operationalDate', 'tag', 'batchId', 'isBound', 'createdAt', 'updatedAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidBagsealRecord(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(bagsealId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidBagsealRecord(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['stagingDestination', 'tripNumber', 'operationalDate', 'tag', 'batchId', 'isBound', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(bagsealId);
+      }
+
+      // 4. User Subcollection: Trips
+      match /trips/{tripId} {
+        allow get, list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(tripId) &&
+                         incoming().userId == userId &&
+                         incoming().keys().hasAll(['userId', 'tripNumber', 'operationalDate', 'status', 'totalBatches', 'totalBagseals', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'tripNumber', 'operationalDate', 'status', 'totalBatches', 'totalBagseals', 'createdAt', 'updatedAt', 'completedAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidTripSummary(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(tripId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidTripSummary(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'totalBatches', 'totalBagseals', 'updatedAt', 'completedAt']);
+      }
+    }
+
+    // 5. App version config (public read for signed-in warehouse staff)
+    match /app_config/{configId} {
+      allow get, list: if isSignedIn() && isValidId(configId);
+      allow write: if false; // Read-only from client
+    }
+  }
+}
